@@ -28,8 +28,15 @@ async def scan_chat(
     end_date: Optional[datetime] = None,
     max_items: Optional[int] = None,
 ) -> ScanResult:
-    """Scan media visible in one chat without downloading it."""
+    """Scan media visible in one chat without downloading it.
+
+    ``chat_id`` is kept as the source identity on every candidate. In the UI this
+    is the marked Telethon dialog id (for example a ``-100...`` channel id), so a
+    later download can always address the original chat even if the UI selection
+    changes after scanning.
+    """
     entity = await client.get_entity(chat_id)
+    source_chat_id = str(chat_id)
 
     title = getattr(entity, "title", None) or getattr(entity, "username", None) or str(chat_id)
     normalized_types: Set[str] = set(media_types or ["photo", "video", "gif", "file"])
@@ -58,8 +65,7 @@ async def scan_chat(
             continue
 
         message_id = int(message.id)
-        chat_identity = str(getattr(entity, "id", chat_id))
-        if database and database.was_downloaded(account_id, chat_identity, message_id):
+        if database and database.was_downloaded(account_id, source_chat_id, message_id):
             already_archived += 1
             continue
 
@@ -67,7 +73,7 @@ async def scan_chat(
         media_id = str(media_id_raw) if media_id_raw is not None else None
         file_size = int(getattr(media_obj, "size", 0) or 0)
         item = MediaCandidate(
-            chat_id=chat_identity,
+            chat_id=source_chat_id,
             message_id=message_id,
             media_id=media_id,
             media_type=media_type,
@@ -82,7 +88,7 @@ async def scan_chat(
             break
 
     return ScanResult(
-        chat_id=str(getattr(entity, "id", chat_id)),
+        chat_id=source_chat_id,
         title=str(title),
         items=items,
         counts=counts,
