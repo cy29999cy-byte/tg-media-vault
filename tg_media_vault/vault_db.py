@@ -1,7 +1,7 @@
 """SQLite persistence for TG Media Vault."""
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from typing import Union
 
 from .models import DownloadRecord
@@ -49,17 +49,38 @@ class VaultDatabase:
             conn.commit()
 
     def was_downloaded(self, account_id: str, chat_id: str, message_id: int) -> bool:
+        """Return whether an archive row still points to a real local file.
+
+        A database row is not enough by itself: users may move or delete archive
+        files between runs. Stale rows are removed so the missing media can be
+        downloaded again on the next scan/archive pass.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT 1
+                SELECT file_path
                 FROM media_items
                 WHERE account_id = ? AND chat_id = ? AND message_id = ?
                 LIMIT 1
                 """,
                 (account_id, chat_id, message_id),
             ).fetchone()
-            return row is not None
+            if row is None:
+                return False
+
+            file_path = Path(str(row["file_path"]))
+            if file_path.exists() and file_path.is_file():
+                return True
+
+            conn.execute(
+                """
+                DELETE FROM media_items
+                WHERE account_id = ? AND chat_id = ? AND message_id = ?
+                """,
+                (account_id, chat_id, message_id),
+            )
+            conn.commit()
+            return False
 
     def record_download(self, record: DownloadRecord) -> bool:
         """Record one media item.
