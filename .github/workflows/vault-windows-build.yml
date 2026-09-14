@@ -2,6 +2,14 @@ name: TG Media Vault Windows Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - "vault_ui.py"
+      - "tg_media_vault/**"
+      - "requirements*.txt"
+      - "build_vault_windows.bat"
+      - ".github/workflows/vault-windows-build.yml"
   push:
     tags:
       - "vault-v*"
