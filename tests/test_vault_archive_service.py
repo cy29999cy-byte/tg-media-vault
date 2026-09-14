@@ -14,8 +14,10 @@ class FakeTelegramClient:
     def __init__(self, fail_first=False):
         self.download_calls = 0
         self.fail_first = fail_first
+        self.requested_chat_ids = []
 
     async def get_messages(self, chat_id, ids):
+        self.requested_chat_ids.append(chat_id)
         return SimpleNamespace(id=ids, chat=SimpleNamespace(id=chat_id))
 
     async def download_media(self, message, file, progress_callback=None):
@@ -201,3 +203,26 @@ def test_archive_paths_separate_channels_with_same_title(tmp_path):
     assert first != second
     assert "1001" in str(first.parent.parent)
     assert "1002" in str(second.parent.parent)
+
+
+def test_archive_uses_item_source_chat_even_when_fallback_chat_differs(tmp_path):
+    client = FakeTelegramClient()
+    service = ArchiveService(
+        client=client,
+        database=VaultDatabase(tmp_path / "vault.sqlite3"),
+        account_id="account-1",
+        root_directory=tmp_path / "archive",
+        retry_delay=0,
+    )
+    item = _candidate("-1001001")
+
+    result = asyncio.run(
+        service.archive_items(
+            chat_id=999999,
+            chat_title="Source Channel",
+            items=[item],
+        )
+    )
+
+    assert result.downloaded == 1
+    assert client.requested_chat_ids == [-1001001]
