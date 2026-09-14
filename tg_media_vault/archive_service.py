@@ -116,6 +116,14 @@ class ArchiveService:
             return result[0] if result else None
         return result
 
+    @staticmethod
+    def _source_chat_id(item: MediaCandidate, fallback):
+        value = item.chat_id if str(item.chat_id).strip() else fallback
+        text = str(value).strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+        return value
+
     def _target_path(self, chat_title: str, item: MediaCandidate) -> Path:
         # Include the stable chat identity so two channels with the same display
         # title can never collide in the local archive.
@@ -224,6 +232,7 @@ class ArchiveService:
                 ArchiveProgress(item, index, total_items, 0, item.file_size, "starting"),
             )
 
+            source_chat_id = self._source_chat_id(item, chat_id)
             for attempt in range(self.retry_count):
                 try:
                     # Never stream directly into the final filename. If the
@@ -232,7 +241,7 @@ class ArchiveService:
                     # archive item.
                     self._remove_partial(partial)
                     message_result = await self.client.get_messages(
-                        chat_id, ids=item.message_id
+                        source_chat_id, ids=item.message_id
                     )
                     message = self._message_from_result(message_result)
                     if message is None:
