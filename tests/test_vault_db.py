@@ -63,3 +63,16 @@ def test_missing_local_file_invalidates_stale_database_row(tmp_path):
     assert db.count_for_chat("42", "-100123") == 1
     assert db.was_downloaded("42", "-100123", 88) is False
     assert db.count_for_chat("42", "-100123") == 0
+
+
+def test_archived_message_ids_bulk_loads_valid_files_and_prunes_stale_rows(tmp_path):
+    db = VaultDatabase(tmp_path / "vault.sqlite3")
+    existing_file = tmp_path / "existing.jpg"
+    existing_file.write_bytes(b"exists")
+    missing_file = tmp_path / "missing.jpg"
+
+    assert db.record_download(_record(str(existing_file), message_id=1)) is True
+    assert db.record_download(_record(str(missing_file), message_id=2)) is True
+
+    assert db.archived_message_ids("42", "-100123") == {1}
+    assert db.count_for_chat("42", "-100123") == 1
