@@ -2,9 +2,9 @@
 
 import sqlite3
 from pathlib import Path
-from typing import Set, Union
+from typing import List, Set, Union
 
-from .models import DownloadRecord
+from .models import ArchiveHistoryItem, DownloadRecord
 
 
 class VaultDatabase:
@@ -155,6 +155,39 @@ class VaultDatabase:
             )
             conn.commit()
             return cursor.rowcount == 1
+
+    def recent_downloads(
+        self, account_id: str, limit: int = 100
+    ) -> List[ArchiveHistoryItem]:
+        """Return the most recent archive rows for one Telegram account."""
+        safe_limit = max(1, min(int(limit), 500))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT account_id, chat_id, message_id, media_id, media_type,
+                       file_name, file_path, file_size, downloaded_at
+                FROM media_items
+                WHERE account_id = ?
+                ORDER BY downloaded_at DESC, id DESC
+                LIMIT ?
+                """,
+                (account_id, safe_limit),
+            ).fetchall()
+
+        return [
+            ArchiveHistoryItem(
+                account_id=str(row["account_id"]),
+                chat_id=str(row["chat_id"]),
+                message_id=int(row["message_id"]),
+                media_id=(str(row["media_id"]) if row["media_id"] is not None else None),
+                media_type=str(row["media_type"]),
+                file_name=str(row["file_name"]),
+                file_path=str(row["file_path"]),
+                file_size=int(row["file_size"] or 0),
+                downloaded_at=str(row["downloaded_at"]),
+            )
+            for row in rows
+        ]
 
     def count_for_chat(self, account_id: str, chat_id: str) -> int:
         with self._connect() as conn:
