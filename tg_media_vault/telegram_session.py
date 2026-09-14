@@ -5,7 +5,7 @@ UI can drive phone-code/password login without exposing Telethon details.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from telethon import TelegramClient
 
@@ -17,7 +17,7 @@ class TelegramSession:
         self,
         api_id: int,
         api_hash: str,
-        session_path: str | Path,
+        session_path: Union[str, Path],
     ) -> None:
         path = Path(session_path)
         path.parent.mkdir(parents=True, exist_ok=True)
