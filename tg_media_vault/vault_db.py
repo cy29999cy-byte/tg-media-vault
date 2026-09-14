@@ -1,0 +1,200 @@
+"""SQLite persistence for TG Media Vault."""
+
+import sqlite3
+from pathlib import Path
+from typing import List, Set, Union
+
+from .models import ArchiveHistoryItem, DownloadRecord
+
+
+class VaultDatabase:
+    """Track downloaded Telegram media and prevent duplicate archiving."""
+
+    def __init__(self, path: Union[str, Path]) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=10000")
+        return conn
+
+    def initialize(self) -> None:
+        with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS media_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    media_id TEXT,
+                    media_type TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    downloaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(account_id, chat_id, message_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_media_chat ON media_items(account_id, chat_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_media_downloaded_at ON media_items(downloaded_at DESC)"
+            )
+            conn.commit()
+
+    def was_downloaded(self, account_id: str, chat_id: str, message_id: int) -> bool:
+        """Return whether an archive row still points to a real local file.
+
+        A database row is not enough by itself: users may move or delete archive
+        files between runs. Stale rows are removed so the missing media can be
+        downloaded again on the next scan/archive pass.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT file_path
+                FROM media_items
+                WHERE account_id = ? AND chat_id = ? AND message_id = ?
+                LIMIT 1
+                """,
+                (account_id, chat_id, message_id),
+            ).fetchone()
+            if row is None:
+                return False
+
+            file_path = Path(str(row["file_path"]))
+            if file_path.exists() and file_path.is_file():
+                return True
+
+            conn.execute(
+                """
+                DELETE FROM media_items
+                WHERE account_id = ? AND chat_id = ? AND message_id = ?
+                """,
+                (account_id, chat_id, message_id),
+            )
+            conn.commit()
+            return False
+
+    def archived_message_ids(self, account_id: str, chat_id: str) -> Set[int]:
+        """Return valid archived message ids for one chat in a single DB pass.
+
+        Missing local files are pruned from SQLite at the same time. This is used
+        by channel scanning so large chats do not open a new SQLite connection
+        for every Telegram message.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT message_id, file_path
+                FROM media_items
+                WHERE account_id = ? AND chat_id = ?
+                """,
+                (account_id, chat_id),
+            ).fetchall()
+
+            valid_ids: Set[int] = set()
+            stale_ids = []
+            for row in rows:
+                message_id = int(row["message_id"])
+                file_path = Path(str(row["file_path"]))
+                if file_path.exists() and file_path.is_file():
+                    valid_ids.add(message_id)
+                else:
+                    stale_ids.append(message_id)
+
+            if stale_ids:
+                conn.executemany(
+                    """
+                    DELETE FROM media_items
+                    WHERE account_id = ? AND chat_id = ? AND message_id = ?
+                    """,
+                    [(account_id, chat_id, message_id) for message_id in stale_ids],
+                )
+                conn.commit()
+
+            return valid_ids
+
+    def record_download(self, record: DownloadRecord) -> bool:
+        """Record one media item.
+
+        Returns True when a new row was inserted and False when the Telegram
+        message had already been archived for this account/chat.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO media_items (
+                    account_id,
+                    chat_id,
+                    message_id,
+                    media_id,
+                    media_type,
+                    file_name,
+                    file_path,
+                    file_size
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.account_id,
+                    record.chat_id,
+                    record.message_id,
+                    record.media_id,
+                    record.media_type,
+                    record.file_name,
+                    record.file_path,
+                    record.file_size,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def recent_downloads(
+        self, account_id: str, limit: int = 100
+    ) -> List[ArchiveHistoryItem]:
+        """Return the most recent archive rows for one Telegram account."""
+        safe_limit = max(1, min(int(limit), 500))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT account_id, chat_id, message_id, media_id, media_type,
+                       file_name, file_path, file_size, downloaded_at
+                FROM media_items
+                WHERE account_id = ?
+                ORDER BY downloaded_at DESC, id DESC
+                LIMIT ?
+                """,
+                (account_id, safe_limit),
+            ).fetchall()
+
+        return [
+            ArchiveHistoryItem(
+                account_id=str(row["account_id"]),
+                chat_id=str(row["chat_id"]),
+                message_id=int(row["message_id"]),
+                media_id=(
+                    str(row["media_id"]) if row["media_id"] is not None else None
+                ),
+                media_type=str(row["media_type"]),
+                file_name=str(row["file_name"]),
+                file_path=str(row["file_path"]),
+                file_size=int(row["file_size"] or 0),
+                downloaded_at=str(row["downloaded_at"]),
+            )
+            for row in rows
+        ]
+
+    def count_for_chat(self, account_id: str, chat_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM media_items WHERE account_id = ? AND chat_id = ?",
+                (account_id, chat_id),
+            ).fetchone()
+            return int(row["total"]) if row else 0
