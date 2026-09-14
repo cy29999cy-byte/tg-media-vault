@@ -76,3 +76,37 @@ def test_archived_message_ids_bulk_loads_valid_files_and_prunes_stale_rows(tmp_p
 
     assert db.archived_message_ids("42", "-100123") == {1}
     assert db.count_for_chat("42", "-100123") == 1
+
+
+def test_recent_downloads_returns_account_scoped_newest_first(tmp_path):
+    db = VaultDatabase(tmp_path / "vault.sqlite3")
+    first_file = tmp_path / "first.jpg"
+    second_file = tmp_path / "second.jpg"
+    other_file = tmp_path / "other.jpg"
+    first_file.write_bytes(b"first")
+    second_file.write_bytes(b"second")
+    other_file.write_bytes(b"other")
+
+    assert db.record_download(_record(str(first_file), message_id=1)) is True
+    assert db.record_download(_record(str(second_file), message_id=2)) is True
+    assert (
+        db.record_download(
+            DownloadRecord(
+                account_id="99",
+                chat_id="-100123",
+                message_id=3,
+                media_id="other",
+                media_type="photo",
+                file_name="other.jpg",
+                file_path=str(other_file),
+                file_size=5,
+            )
+        )
+        is True
+    )
+
+    history = db.recent_downloads("42", limit=10)
+
+    assert [item.message_id for item in history] == [2, 1]
+    assert all(item.account_id == "42" for item in history)
+    assert history[0].file_path == str(second_file)
