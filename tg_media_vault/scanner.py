@@ -42,6 +42,11 @@ async def scan_chat(
     normalized_types: Set[str] = set(media_types or ["photo", "video", "gif", "file"])
     start_utc = _as_utc(start_date)
     end_utc = _as_utc(end_date)
+    archived_ids = (
+        database.archived_message_ids(account_id, source_chat_id)
+        if database is not None
+        else set()
+    )
 
     items = []
     counts = {"photo": 0, "video": 0, "gif": 0, "file": 0}
@@ -65,7 +70,7 @@ async def scan_chat(
             continue
 
         message_id = int(message.id)
-        if database and database.was_downloaded(account_id, source_chat_id, message_id):
+        if message_id in archived_ids:
             already_archived += 1
             continue
 
