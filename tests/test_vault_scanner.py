@@ -24,7 +24,7 @@ class FakeScanClient:
         return iterator()
 
 
-def test_scan_filters_types_and_dates(tmp_path):
+def test_scan_filters_types_dates_and_preserves_source_dialog_id(tmp_path):
     now = datetime.now(timezone.utc)
     messages = [
         SimpleNamespace(
@@ -53,12 +53,13 @@ def test_scan_filters_types_and_dates(tmp_path):
     ]
     client = FakeScanClient(messages)
     database = VaultDatabase(tmp_path / "vault.sqlite3")
+    source_dialog_id = -100777
 
     result = asyncio.run(
         scan_chat(
             client=client,
             account_id="account-1",
-            chat_id=777,
+            chat_id=source_dialog_id,
             database=database,
             media_types=["photo", "video"],
             start_date=now - timedelta(days=7),
@@ -66,7 +67,9 @@ def test_scan_filters_types_and_dates(tmp_path):
     )
 
     assert result.title == "Reference Channel"
+    assert result.chat_id == str(source_dialog_id)
     assert result.counts["photo"] == 1
     assert result.counts["video"] == 1
     assert len(result.items) == 2
     assert {item.message_id for item in result.items} == {2, 3}
+    assert {item.chat_id for item in result.items} == {str(source_dialog_id)}
