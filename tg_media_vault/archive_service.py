@@ -280,7 +280,10 @@ class ArchiveService:
                         )
 
                     downloaded_path = Path(str(downloaded)).expanduser().resolve()
-                    if downloaded_path.exists() and downloaded_path != partial.resolve():
+                    if (
+                        downloaded_path.exists()
+                        and downloaded_path != partial.resolve()
+                    ):
                         os.replace(str(downloaded_path), str(partial))
 
                     if not partial.exists():
