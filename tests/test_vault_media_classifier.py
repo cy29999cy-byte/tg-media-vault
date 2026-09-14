@@ -9,6 +9,10 @@ class DocumentAttributeAnimated:
     pass
 
 
+class DocumentAttributeVideo:
+    round_message = False
+
+
 class RoundVideoAttribute:
     round_message = True
 
@@ -55,6 +59,16 @@ def test_round_video_is_video():
         id=55,
         mime_type="application/octet-stream",
         attributes=[RoundVideoAttribute()],
+    )
+    message = SimpleNamespace(photo=None, document=document)
+    assert classify_message(message)[0] == "video"
+
+
+def test_generic_mime_with_video_attribute_is_video():
+    document = SimpleNamespace(
+        id=66,
+        mime_type="application/octet-stream",
+        attributes=[DocumentAttributeVideo()],
     )
     message = SimpleNamespace(photo=None, document=document)
     assert classify_message(message)[0] == "video"
