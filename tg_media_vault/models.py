@@ -52,3 +52,18 @@ class DownloadRecord:
     file_name: str
     file_path: str
     file_size: int
+
+
+@dataclass(frozen=True)
+class ArchiveHistoryItem:
+    """One persisted archive item shown in history views."""
+
+    account_id: str
+    chat_id: str
+    message_id: int
+    media_id: Optional[str]
+    media_type: str
+    file_name: str
+    file_path: str
+    file_size: int
+    downloaded_at: str
