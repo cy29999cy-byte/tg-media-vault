@@ -23,7 +23,7 @@ The product should support these as first-class user-facing categories where Tel
 - GIF / animation media
 - stickers, including common static, animated, and video sticker representations when Telethon exposes them as documents
 
-The current upstream code has first-class categories for photo, video, audio, voice, video_note, and document. GIF/animation and sticker media currently fall through the generic document/video logic rather than being explicitly classified, named, filtered, and tested. This is a planned product gap, not a reason to replace the existing downloader.
+Phase 1 adds first-class sticker and animation categories alongside the original six. Detection uses Telegram attributes and GIF MIME metadata; legacy document/video selections remain compatible. ADR 0002 records selection precedence, format rules, and storage behavior.
 
 ## Architecture we are keeping
 - `media_downloader.py`: async Telethon download engine and orchestration.
@@ -54,7 +54,7 @@ The current upstream code has first-class categories for photo, video, audio, vo
 - Large pytest suite and lint/type-check tooling.
 
 ## Current gaps to address next
-1. First-class GIF/animation and sticker detection, naming, filtering, storage, UI choices, and tests.
+1. Phase 1 implemented: first-class GIF/animation and sticker detection, naming, filtering, storage, UI choices, and tests. Check PR verification status before merging.
 2. Explicit Telegram `FloodWaitError` handling with bounded sleep/retry and observability.
 3. Stronger retry taxonomy: transient vs permanent failures, maximum attempt accounting, and clearer history status.
 4. Durable run-state UX in the Web UI: running/paused/stopped/failed/completed plus per-chat progress.

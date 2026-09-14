@@ -1,6 +1,6 @@
 # ADR 0002: Treat Telegram animations and stickers as first-class media categories
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-15
 
 ## Context
@@ -8,7 +8,7 @@ The existing `get_media_type()` distinguishes photos and Telegram documents by c
 
 Telegram may represent user-visible “GIFs” as animated documents/video-like media, and stickers can be static, animated, or video documents. Therefore file extension alone is not a reliable product taxonomy.
 
-## Proposed decision
+## Decision
 Introduce explicit logical media categories based on Telethon document attributes and MIME metadata:
 
 - `animation`: Telegram animation/GIF-style media, detected from animation attributes and compatible document/video metadata.
@@ -20,7 +20,9 @@ The logical category should control filtering, destination folders, history labe
 
 ## Compatibility
 - Existing configurations that include `document` should continue to work without silently losing files.
-- A migration rule must be defined before implementation: either `document` implicitly includes the new subtypes for backward compatibility, or configuration migration expands existing `document` selections. This decision must be covered by tests.
+- Keep the original attribute-based category as a compatibility selection route. Media formerly classified as `document` or `video` continues to match that selection and its original MIME-subtype format filter. Do not broaden `document` to include media it did not match before.
+- Explicit `sticker`/`animation` selections take precedence and use their own extension-based format lists. Missing new format keys mean `all`; an explicit empty list matches nothing in the engine.
+- Keep global/per-chat inheritance unchanged; no automatic YAML migration is required.
 - Existing photo/video/audio/voice/video_note behavior must remain unchanged.
 
 ## Required tests before acceptance
@@ -33,9 +35,15 @@ The logical category should control filtering, destination folders, history labe
 - configuration backward compatibility
 - Web UI selection round-trip
 
-## Open questions
-1. Should legacy `document` selection include stickers and animations by default?
-2. Should animation files live under `animation/` even when the underlying MIME type is video/mp4?
-3. Should sticker subtypes be stored together or under subtype-specific folders?
+## Storage and representation
+New animation downloads live under `animation/`, even when represented as MP4.
+All sticker subtypes share `sticker/`; their extensions retain the representation.
+History records the logical category. Existing files and history remain untouched.
+Sticker attributes take precedence over animated/video attributes. Raw GIF MIME
+metadata also identifies animations, but extensions alone do not classify media.
 
-This ADR remains Proposed until those compatibility questions are resolved during implementation planning.
+## Verification
+Tests cover all three sticker representations, classification precedence, raw GIF
+and Telegram MP4 animations, legacy selections and format restrictions, explicit
+selection precedence, generated names, download paths/history, and actual NiceGUI
+selection/format save-and-reload behavior. See the PR for the latest test/CI results.

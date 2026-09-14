@@ -365,7 +365,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/123/photo/photo_123"),
+                platform_generic_path("/root/project/123/photo/photo_123.jpg"),
                 "jpg",
             ),
             result,
@@ -446,7 +446,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/123/video/video_123"),
+                platform_generic_path("/root/project/123/video/video_123.mp4"),
                 "mp4",
             ),
             result,
@@ -511,7 +511,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/custom/downloads/photo/photo_123"),
+                platform_generic_path("/custom/downloads/photo/photo_123.jpg"),
                 "jpg",
             ),
             result,

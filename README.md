@@ -309,3 +309,44 @@ Want to file a bug, contribute some code, or improve documentation? Excellent! R
 
 ### Code of Conduct
 Help us keep Telegram Media Downloader open and inclusive. Please read and follow our [Code of Conduct](https://github.com/Dineshkarthik/telegram_media_downloader/blob/master/CODE_OF_CONDUCT.md).
+# Sticker and animation media
+
+`media_types` supports `sticker` and `animation` in addition to `photo`, `video`,
+`audio`, `voice`, `video_note`, and `document`. Both global and per-chat Web UI
+selectors expose the new categories, and history can filter them separately.
+
+- Stickers are detected from Telegram sticker attributes, including WebP, TGS,
+  and WebM representations. Sticker detection takes precedence over animation
+  and video attributes, regardless of attribute order.
+- Animations are detected from Telegram animation attributes or `image/gif`
+  MIME metadata. A normal MP4 video remains a video; a filename alone never
+  turns a document into a sticker or animation.
+- New downloads use `sticker/` and `animation/` folders and matching history
+  labels. Existing files/history are not moved or relabeled.
+- Missing filenames become `<category>_<document-id>.<extension>` when a known
+  MIME type supplies an extension, including `.tgs`, `.webp`, `.webm`, `.gif`,
+  and `.mp4`. Original filenames remain intact apart from Windows-invalid
+  characters. An unrecognized MIME type does not invent an extension.
+
+## Configuration compatibility
+
+Old selections retain their original filtering behavior: a sticker/animation
+that previously matched `document` still matches `document`; media previously
+classified as `video` still matches `video`. Their original MIME-subtype format
+filters remain in force (for example `document: [x-tgsticker]`). Thus upgrading
+does not require rewriting old YAML files or adding format keys.
+
+Explicitly selecting `sticker` or `animation` takes precedence over that legacy
+route and uses `file_formats.sticker` or `file_formats.animation`, respectively.
+These use extensions such as `tgs`, `webp`, `webm`, `gif`, and `mp4`; missing keys
+allow all formats. To archive only stickers, use `media_types: [sticker]`. To
+exclude a subtype, remove its explicit selection and any legacy category that
+would also include it. Global/per-chat inheritance follows the existing rules:
+a per-chat media list or format dictionary replaces its global counterpart.
+
+```yaml
+media_types: [sticker, animation]
+file_formats:
+  sticker: [webp, tgs, webm]
+  animation: [gif, mp4]
+```

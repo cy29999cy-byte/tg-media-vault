@@ -41,7 +41,17 @@ def build_history_tab(config: dict, open_media_fn, this_dir: str):
 
             media_type_select = (
                 ui.select(
-                    ["All", "photo", "video", "document", "audio", "voice"],
+                    [
+                        "All",
+                        "photo",
+                        "video",
+                        "document",
+                        "audio",
+                        "voice",
+                        "video_note",
+                        "sticker",
+                        "animation",
+                    ],
                     value="All",
                     label="Type",
                 )

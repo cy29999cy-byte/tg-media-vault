@@ -38,6 +38,10 @@ media_types:
 - document
 - voice
 - video_note
+- sticker
+- animation
+# Compatibility: document/video still include media formerly classified that way.
+# Selecting sticker/animation explicitly uses their own format filters below.
 file_formats:
   audio:
   - all
@@ -45,6 +49,10 @@ file_formats:
   - all
   video:
   - all
+  sticker:
+  - all  # e.g. webp, tgs, webm
+  animation:
+  - all  # e.g. gif, mp4
 
 #optional
 download_directory: null  # Custom directory path for downloads (absolute or relative)

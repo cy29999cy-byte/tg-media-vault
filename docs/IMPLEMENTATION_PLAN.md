@@ -1,6 +1,6 @@
 # TG Media Vault — Implementation Plan
 
-Status: planning only. This document does not change downloader behavior.
+Status: Phase 1 implemented on `codex-skill-audit`; PR validation records the latest test and CI results. Phases 2–5 remain planned.
 
 ## Baseline discovered in the current repository
 
@@ -85,9 +85,9 @@ Implementation goals:
    - generic document
    - media without an explicit filename
 
-Backward-compatibility rule to settle before code merge:
+Accepted backward-compatibility rule (ADR 0002):
 
-Existing configurations that selected `document` must not unexpectedly stop archiving sticker/animation files after upgrading. The implementation should either migrate legacy selections to explicit new categories or provide documented umbrella semantics. Whichever route is chosen must be covered by tests before ADR 0002 moves from Proposed to Accepted.
+Existing `document`/`video` selections keep matching media under its original classification and MIME format filters. Explicit `sticker`/`animation` selections take precedence and use their own extension filters. New folders/history use the logical category. No YAML migration is needed. Classification, filtering, naming, download history, and Web UI round trips are covered by tests.
 
 ### Phase 2 — Rate-limit-aware retries
 

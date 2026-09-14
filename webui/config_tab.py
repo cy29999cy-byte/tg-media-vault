@@ -130,7 +130,16 @@ def build_config_tab(config: dict, save_config_fn):
         with ui.row().style("gap: 16px; width: 100%; align-items: center;"):
             _media_types = config.get(
                 "media_types",
-                ["photo", "video", "document", "audio", "voice", "video_note"],
+                [
+                    "photo",
+                    "video",
+                    "document",
+                    "audio",
+                    "voice",
+                    "video_note",
+                    "sticker",
+                    "animation",
+                ],
             )
             global_inputs["media_types"] = (
                 ui.select(
@@ -141,6 +150,8 @@ def build_config_tab(config: dict, save_config_fn):
                         "audio",
                         "voice",
                         "video_note",
+                        "sticker",
+                        "animation",
                     ],
                     value=_media_types,
                     multiple=True,
@@ -153,6 +164,11 @@ def build_config_tab(config: dict, save_config_fn):
                 "Parallel Chats",
                 value=config.get("parallel_chats", False),
             ).style("color: var(--text-secondary);")
+
+        ui.label(
+            "Document/video selections also include stickers and animations previously "
+            "classified that way. Select sticker/animation explicitly to use their own format filters."
+        ).classes("text-caption")
 
         with ui.expansion("File Formats (Comma-separated)", icon="folder_zip").props(
             "dense"
@@ -191,6 +207,17 @@ def build_config_tab(config: dict, save_config_fn):
                     .classes("col")
                     .props('outlined dense hint="e.g. pdf,epub or all"')
                 )
+
+            with ui.row().style("gap: 16px; width: 100%;"):
+                for category in ("sticker", "animation"):
+                    global_inputs[f"format_{category}"] = (
+                        ui.input(
+                            f"{category.title()} Formats",
+                            value=",".join(file_formats.get(category, ["all"])),
+                        )
+                        .classes("col")
+                        .props('outlined dense hint="e.g. webp,tgs,webm or all"')
+                    )
 
     # ── Target Chats Card ──
     with ui.element("div").classes("premium-card").style(
@@ -355,6 +382,8 @@ def build_config_tab(config: dict, save_config_fn):
                                                 "audio",
                                                 "voice",
                                                 "video_note",
+                                                "sticker",
+                                                "animation",
                                             ],
                                             value=_c_media,
                                             multiple=True,
@@ -421,6 +450,11 @@ def build_config_tab(config: dict, save_config_fn):
                                                     'outlined dense placeholder="all"'
                                                 )
                                             )
+                                    for category in ("sticker", "animation"):
+                                        c_inputs[f"format_{category}"] = ui.input(
+                                            f"Override {category.title()}",
+                                            value=",".join(c_formats.get(category, [])),
+                                        ).props('outlined dense placeholder="all"')
                     chat_inputs.append(c_inputs)
 
         # Init existing chats
@@ -520,6 +554,13 @@ def build_config_tab(config: dict, save_config_fn):
             or ["all"],
         }
 
+        for category in ("sticker", "animation"):
+            config["file_formats"][category] = [
+                x.strip()
+                for x in global_inputs[f"format_{category}"].value.split(",")
+                if x.strip()
+            ] or ["all"]
+
         built_chats = []
         for c_in in chat_inputs:
             chat_val = c_in["chat_id"].value.strip()
@@ -590,6 +631,13 @@ def build_config_tab(config: dict, save_config_fn):
                     for x in c_in["format_document"].value.split(",")
                     if x.strip()
                 ]
+            for category in ("sticker", "animation"):
+                if c_in[f"format_{category}"].value.strip():
+                    chat_formats[category] = [
+                        x.strip()
+                        for x in c_in[f"format_{category}"].value.split(",")
+                        if x.strip()
+                    ]
             if chat_formats:
                 chat_obj["file_formats"] = chat_formats
 
