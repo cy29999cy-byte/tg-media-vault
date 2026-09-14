@@ -1,0 +1,47 @@
+name: TG Media Vault Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "vault-v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-webui.txt
+          python -m pip install pyinstaller
+
+      - name: Build TGMediaVault.exe
+        run: nicegui-pack --onefile --name TGMediaVault --clean --noconfirm vault_ui.py
+
+      - name: Verify executable
+        shell: powershell
+        run: |
+          if (-not (Test-Path "dist/TGMediaVault.exe")) {
+            throw "dist/TGMediaVault.exe was not created"
+          }
+          Get-Item "dist/TGMediaVault.exe" | Format-List Name,Length,LastWriteTime
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: TGMediaVault-Windows
+          path: dist/TGMediaVault.exe
+          if-no-files-found: error
+          retention-days: 14
