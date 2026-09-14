@@ -1,17 +1,13 @@
 """Channel/group media scanning for TG Media Vault."""
 
 from datetime import datetime, timezone
-from typing import Iterable, Optional, Sequence, Set
+from typing import Optional, Sequence, Set
 
 from telethon import TelegramClient
 
 from .media_classifier import candidate_filename, classify_message
 from .models import MediaCandidate, ScanResult
 from .vault_db import VaultDatabase
-
-
-class ProtectedContentError(RuntimeError):
-    """Raised when Telegram marks a chat as protected from forwarding/saving."""
 
 
 def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
@@ -32,16 +28,8 @@ async def scan_chat(
     end_date: Optional[datetime] = None,
     max_items: Optional[int] = None,
 ) -> ScanResult:
-    """Scan media visible in one chat without downloading it.
-
-    Protected chats (Telegram ``noforwards``) are intentionally rejected. This
-    project does not attempt to bypass Telegram content-protection settings.
-    """
+    """Scan media visible in one chat without downloading it."""
     entity = await client.get_entity(chat_id)
-    if bool(getattr(entity, "noforwards", False)):
-        raise ProtectedContentError(
-            "This Telegram chat has content protection enabled and cannot be archived by TG Media Vault."
-        )
 
     title = getattr(entity, "title", None) or getattr(entity, "username", None) or str(chat_id)
     normalized_types: Set[str] = set(media_types or ["photo", "video", "gif", "file"])
