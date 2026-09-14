@@ -7,7 +7,6 @@ from typing import Optional
 
 import yaml
 
-
 APP_DIR = Path.home() / ".tg-media-vault"
 SETTINGS_PATH = APP_DIR / "settings.yaml"
 SESSION_DIR = APP_DIR / "sessions"
