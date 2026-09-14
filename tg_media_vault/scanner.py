@@ -38,7 +38,11 @@ async def scan_chat(
     entity = await client.get_entity(chat_id)
     source_chat_id = str(chat_id)
 
-    title = getattr(entity, "title", None) or getattr(entity, "username", None) or str(chat_id)
+    title = (
+        getattr(entity, "title", None)
+        or getattr(entity, "username", None)
+        or str(chat_id)
+    )
     normalized_types: Set[str] = set(media_types or ["photo", "video", "gif", "file"])
     start_utc = _as_utc(start_date)
     end_utc = _as_utc(end_date)
