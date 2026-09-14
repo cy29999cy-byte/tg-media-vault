@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sqlite3
+from typing import Union
 
 from .models import DownloadRecord
 
@@ -9,7 +10,7 @@ from .models import DownloadRecord
 class VaultDatabase:
     """Track downloaded Telegram media and prevent duplicate archiving."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: Union[str, Path]) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
