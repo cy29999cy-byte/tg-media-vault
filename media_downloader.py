@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import mimetypes
 import os
 import random
 import re
@@ -13,6 +14,8 @@ from telethon import TelegramClient
 from telethon.errors import FileReferenceExpiredError
 from telethon.tl.types import (
     Document,
+    DocumentAttributeAnimated,
+    DocumentAttributeSticker,
     Message,
     MessageMediaDocument,
     MessageMediaPhoto,
@@ -80,6 +83,44 @@ def update_config(config: dict):
     logger.info("Updated last read message_id to config file")
 
 
+def _document_type(document: Document) -> str:
+    """Original document classification, retained for legacy selection rules."""
+    for attr in getattr(document, "attributes", []):
+        if hasattr(attr, "voice") and isinstance(attr.voice, bool):
+            return "voice" if attr.voice else "audio"
+        if hasattr(attr, "round_message") and isinstance(attr.round_message, bool):
+            return "video_note" if attr.round_message else "video"
+    return "document"
+
+
+def _selected_media_type(message: Message, media_type: str, selected: List[str]) -> str:
+    """Choose the explicit category or its original, compatible filter category."""
+    if media_type in selected:
+        return media_type
+    if media_type in ("sticker", "animation"):
+        legacy_type = _document_type(message.document)
+        if legacy_type in selected:
+            return legacy_type
+    return ""
+
+
+def _media_extension(mime_type: str) -> str:
+    """Resolve real extensions rather than using MIME subtypes as filenames."""
+    known = {
+        "application/x-tgsticker": ".tgs",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "image/jpeg": ".jpg",
+        "video/webm": ".webm",
+        "video/mp4": ".mp4",
+        "video/quicktime": ".mov",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/ogg": ".ogg",
+    }
+    return known.get(mime_type) or mimetypes.guess_extension(mime_type) or ""
+
+
 def _can_download(_type: str, file_formats: dict, file_format: Optional[str]) -> bool:
     """
     Check if the given file format can be downloaded.
@@ -100,8 +141,10 @@ def _can_download(_type: str, file_formats: dict, file_format: Optional[str]) ->
     bool
         True if the file format can be downloaded else False.
     """
-    if _type in ["audio", "document", "video"]:
-        allowed_formats: list = file_formats[_type]
+    if _type in ["audio", "document", "video", "sticker", "animation"]:
+        allowed_formats: list = file_formats.get(_type, ["all"])
+        if not allowed_formats:
+            return False
         if not file_format in allowed_formats and allowed_formats[0] != "all":
             return False
     return True
@@ -171,10 +214,14 @@ async def _get_media_meta(
         file_name, file_format
     """
     file_format: Optional[str] = None
-    if hasattr(media_obj, "mime_type") and media_obj.mime_type:
-        file_format = media_obj.mime_type.split("/")[-1]
+    mime_type = getattr(media_obj, "mime_type", "") or ""
+    mime_type = mime_type.split(";", 1)[0].strip().lower()
+    extension = _media_extension(mime_type) if mime_type else ""
+    if mime_type:
+        file_format = mime_type.split("/")[-1]
     elif _type == "photo":
         file_format = "jpg"
+        extension = ".jpg"
 
     # Determine base directory for downloads
     if download_directory:
@@ -183,17 +230,22 @@ async def _get_media_meta(
         base_dir = os.path.join(THIS_DIR, str(chat_id))
 
     if _type in ["voice", "video_note"]:
-        file_name_base = f"{_type}_{media_obj.date.isoformat()}.{file_format}"
+        file_name_base = f"{_type}_{media_obj.date.isoformat()}{extension}"
     else:
         file_name_base = ""
         if hasattr(media_obj, "attributes"):
             for attr in media_obj.attributes:
-                if hasattr(attr, "file_name"):
+                if isinstance(getattr(attr, "file_name", None), str) and attr.file_name:
                     file_name_base = attr.file_name
                     break
         if file_name_base == "":
             if hasattr(media_obj, "id"):
-                file_name_base = f"{_type}_{media_obj.id}"
+                file_name_base = f"{_type}_{media_obj.id}{extension}"
+
+    if not extension:
+        extension = os.path.splitext(file_name_base)[1].lower()
+    if not file_format or _type in ("sticker", "animation"):
+        file_format = extension.lstrip(".") or file_format
 
     # Sanitize the file name to remove invalid Windows characters
     file_name_base = re.sub(r'[<>:"/\\|?*]', "_", file_name_base)
@@ -213,7 +265,8 @@ def get_media_type(message: Message) -> Optional[str]:
     Returns
     -------
     Optional[str]
-        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document')
+        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document',
+        'sticker', 'animation')
         or None.
     """
     if not message.media:
@@ -222,12 +275,18 @@ def get_media_type(message: Message) -> Optional[str]:
         return "photo"
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
-        for attr in doc.attributes:
-            if hasattr(attr, "voice") and isinstance(attr.voice, bool):
-                return "voice" if attr.voice else "audio"
-            if hasattr(attr, "round_message") and isinstance(attr.round_message, bool):
-                return "video_note" if attr.round_message else "video"
-        return "document"
+        attributes = getattr(doc, "attributes", [])
+        if any(isinstance(attr, DocumentAttributeSticker) for attr in attributes):
+            return "sticker"
+        mime_type = (
+            (getattr(doc, "mime_type", "") or "").split(";", 1)[0].strip().lower()
+        )
+        if (
+            any(isinstance(attr, DocumentAttributeAnimated) for attr in attributes)
+            or mime_type == "image/gif"
+        ):
+            return "animation"
+        return _document_type(doc)
     return None
 
 
@@ -278,7 +337,10 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
         try:
             _type = get_media_type(message)
             logger.debug("Processing message %s of type %s", message.id, _type)
-            if not _type or _type not in media_types:
+            filter_type = (
+                _selected_media_type(message, _type, media_types) if _type else ""
+            )
+            if not _type or not filter_type:
                 PROCESSED_IDS[chat_id].append(message.id)
                 return message.id
             media_obj = message.photo if _type == "photo" else message.document
@@ -288,7 +350,11 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
             file_name, file_format = await _get_media_meta(
                 media_obj, _type, chat_id, download_directory
             )
-            if _can_download(_type, file_formats, file_format):
+            if _type in ("sticker", "animation") and filter_type != _type:
+                # Preserve MIME-subtype filters from legacy document/video configs.
+                mime_type = getattr(media_obj, "mime_type", "") or ""
+                file_format = mime_type.split("/")[-1] if mime_type else file_format
+            if _can_download(filter_type, file_formats, file_format):
                 file_size = getattr(media_obj, "size", 0)
                 display_name = getattr(
                     media_obj, "file_name", os.path.basename(file_name)
