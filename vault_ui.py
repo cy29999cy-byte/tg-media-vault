@@ -13,7 +13,12 @@ except ImportError as exc:  # pragma: no cover - manual entry point
         "NiceGUI is required. Install with: pip install -r requirements-webui.txt"
     ) from exc
 
-from telethon.errors import PhoneCodeInvalidError, SessionPasswordNeededError
+from telethon.errors import (
+    PasswordHashInvalidError,
+    PhoneCodeExpiredError,
+    PhoneCodeInvalidError,
+    SessionPasswordNeededError,
+)
 
 from tg_media_vault.archive_service import ArchiveProgress, ArchiveService
 from tg_media_vault.dialogs import list_media_dialogs
@@ -33,6 +38,7 @@ settings = load_settings()
 database = VaultDatabase(DATABASE_PATH)
 state = {
     "session": None,
+    "session_credentials": None,
     "phone_code_hash": None,
     "dialogs": {},
     "scan_result": None,
@@ -61,7 +67,7 @@ def index():
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-0"):
                 ui.label("TG Media Vault").classes("text-2xl font-bold")
-                ui.label("Telegram 媒体归档 · V1 MVP").classes("muted")
+                ui.label("Telegram 媒体归档 · V1.1").classes("muted")
             connection_badge = ui.badge("未连接", color="grey")
 
         # ------------------------------------------------------------------
@@ -155,6 +161,68 @@ def index():
                     "刷新频道", icon="refresh", color="grey"
                 ).props("outline")
 
+        # ------------------------------------------------------------------
+        # Recent archive history
+        # ------------------------------------------------------------------
+        with ui.column().classes("vault-card w-full gap-4"):
+            with ui.row().classes("items-center justify-between w-full"):
+                ui.label("4. 最近归档").classes("text-lg font-semibold")
+                history_button = ui.button(
+                    "刷新历史", icon="history", color="grey"
+                ).props("outline")
+            history_status = ui.label("登录后显示最近 100 条归档记录").classes(
+                "muted"
+            )
+            history_table = ui.table(
+                columns=[
+                    {
+                        "name": "downloaded_at",
+                        "label": "时间",
+                        "field": "downloaded_at",
+                        "align": "left",
+                    },
+                    {
+                        "name": "chat",
+                        "label": "频道 / 群组",
+                        "field": "chat",
+                        "align": "left",
+                    },
+                    {
+                        "name": "media_type",
+                        "label": "类型",
+                        "field": "media_type",
+                        "align": "left",
+                    },
+                    {
+                        "name": "file_name",
+                        "label": "文件",
+                        "field": "file_name",
+                        "align": "left",
+                    },
+                    {
+                        "name": "size",
+                        "label": "大小",
+                        "field": "size",
+                        "align": "right",
+                    },
+                ],
+                rows=[],
+                row_key="key",
+                pagination=10,
+            ).classes("w-full")
+
+        def invalidate_scan(message="条件已变化，请重新扫描"):
+            state["scan_result"] = None
+            photo_metric.set_text("0")
+            video_metric.set_text("0")
+            gif_metric.set_text("0")
+            file_metric.set_text("0")
+            archived_metric.set_text("0")
+            scan_status.set_text(message)
+            overall_progress.set_value(0)
+            file_progress.set_value(0)
+            progress_label.set_text("等待任务")
+
         async def ensure_session():
             raw_api_id = str(api_id_input.value or "").strip()
             api_hash = str(api_hash_input.value or "").strip()
@@ -167,13 +235,30 @@ def index():
                 ui.notify("API ID 必须是数字", type="negative")
                 return None
 
+            credentials = (api_id, api_hash)
             existing = state.get("session")
-            if existing is None:
+            if existing is None or state.get("session_credentials") != credentials:
+                if existing is not None:
+                    try:
+                        await existing.disconnect()
+                    except Exception:
+                        pass
                 state["session"] = TelegramSession(
                     api_id=api_id,
                     api_hash=api_hash,
                     session_path=session_path(),
                 )
+                state["session_credentials"] = credentials
+                state["phone_code_hash"] = None
+                state["dialogs"] = {}
+                state["account_id"] = None
+                channel_select.set_options([])
+                channel_select.value = None
+                connection_badge.set_text("未连接")
+                connection_badge.props("color=grey")
+                auth_status.set_text("连接参数已更新，请重新连接 Telegram")
+                invalidate_scan("连接参数已更新，请重新扫描")
+
             current_settings = AppSettings(
                 api_id=api_id,
                 api_hash=api_hash,
@@ -184,6 +269,32 @@ def index():
             )
             save_settings(current_settings)
             return state["session"]
+
+        async def refresh_history():
+            account_id = state.get("account_id")
+            if not account_id:
+                history_table.rows = []
+                history_table.update()
+                history_status.set_text("登录后显示最近 100 条归档记录")
+                return
+
+            title_by_id = {
+                str(item.id): item.title for item in state.get("dialogs", {}).values()
+            }
+            history = database.recent_downloads(str(account_id), limit=100)
+            history_table.rows = [
+                {
+                    "key": "{0}:{1}".format(item.chat_id, item.message_id),
+                    "downloaded_at": item.downloaded_at,
+                    "chat": title_by_id.get(item.chat_id, item.chat_id),
+                    "media_type": item.media_type,
+                    "file_name": item.file_name,
+                    "size": _format_bytes(item.file_size),
+                }
+                for item in history
+            ]
+            history_table.update()
+            history_status.set_text("最近 {0} 条归档记录".format(len(history)))
 
         async def refresh_dialogs():
             session = await ensure_session()
@@ -205,8 +316,9 @@ def index():
             connection_badge.set_text("已连接")
             connection_badge.props("color=positive")
             auth_status.set_text("已登录，读取到 {0} 个频道/群组".format(len(dialogs)))
-            if dialogs:
+            if dialogs and channel_select.value not in lookup:
                 channel_select.value = next(iter(lookup))
+            await refresh_history()
 
         async def connect_or_send_code():
             session = await ensure_session()
@@ -248,7 +360,17 @@ def index():
                 if not password:
                     ui.notify("该账号启用了两步验证，请输入密码", type="warning")
                     return
-                await session.sign_in_password(password)
+                try:
+                    await session.sign_in_password(password)
+                except PasswordHashInvalidError:
+                    ui.notify("两步验证密码不正确", type="negative")
+                    return
+                except Exception as exc:
+                    ui.notify("两步验证失败：{0}".format(exc), type="negative")
+                    return
+            except PhoneCodeExpiredError:
+                ui.notify("验证码已过期，请重新获取", type="negative")
+                return
             except PhoneCodeInvalidError:
                 ui.notify("验证码不正确", type="negative")
                 return
@@ -324,11 +446,6 @@ def index():
             if session is None or not await session.is_authorized():
                 ui.notify("请先登录 Telegram", type="warning")
                 return
-            selected_label = channel_select.value
-            dialog = state.get("dialogs", {}).get(selected_label)
-            if dialog is None:
-                ui.notify("频道状态已失效，请重新选择", type="warning")
-                return
 
             output_dir = str(output_input.value or "").strip()
             if not output_dir:
@@ -369,7 +486,7 @@ def index():
             )
             try:
                 summary = await service.archive_items(
-                    chat_id=dialog.id,
+                    chat_id=result.chat_id,
                     chat_title=result.title,
                     items=result.items,
                     progress_hook=on_progress,
@@ -386,6 +503,7 @@ def index():
                     ),
                     type="positive" if summary.failed == 0 else "warning",
                 )
+                await refresh_history()
                 # Re-scan so newly persisted SQLite rows are immediately reflected.
                 await run_scan()
             except Exception as exc:
@@ -393,9 +511,19 @@ def index():
             finally:
                 archive_button.enable()
 
+        channel_select.on_value_change(
+            lambda _: invalidate_scan("频道已变化，请重新扫描")
+        )
+        media_types_select.on_value_change(
+            lambda _: invalidate_scan("媒体类型已变化，请重新扫描")
+        )
+        time_range_select.on_value_change(
+            lambda _: invalidate_scan("时间范围已变化，请重新扫描")
+        )
         scan_button.on("click", run_scan)
         archive_button.on("click", run_archive)
         refresh_button.on("click", refresh_dialogs)
+        history_button.on("click", refresh_history)
 
         # If credentials + an authorized session already exist, connect quietly.
         if settings.api_id and settings.api_hash:
@@ -407,6 +535,15 @@ def _metric(label: str, initial: str):
         ui.label(label).classes("muted")
         value = ui.label(initial).classes("text-xl font-semibold")
     return value
+
+
+def _format_bytes(size: int) -> str:
+    value = float(max(0, int(size)))
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return "{0:.1f} {1}".format(value, unit)
+        value /= 1024
+    return "0 B"
 
 
 if __name__ in {"__main__", "__mp_main__"}:
