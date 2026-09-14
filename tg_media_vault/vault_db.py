@@ -2,7 +2,7 @@
 
 import sqlite3
 from pathlib import Path
-from typing import Union
+from typing import Set, Union
 
 from .models import DownloadRecord
 
@@ -81,6 +81,45 @@ class VaultDatabase:
             )
             conn.commit()
             return False
+
+    def archived_message_ids(self, account_id: str, chat_id: str) -> Set[int]:
+        """Return valid archived message ids for one chat in a single DB pass.
+
+        Missing local files are pruned from SQLite at the same time. This is used
+        by channel scanning so large chats do not open a new SQLite connection
+        for every Telegram message.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT message_id, file_path
+                FROM media_items
+                WHERE account_id = ? AND chat_id = ?
+                """,
+                (account_id, chat_id),
+            ).fetchall()
+
+            valid_ids: Set[int] = set()
+            stale_ids = []
+            for row in rows:
+                message_id = int(row["message_id"])
+                file_path = Path(str(row["file_path"]))
+                if file_path.exists() and file_path.is_file():
+                    valid_ids.add(message_id)
+                else:
+                    stale_ids.append(message_id)
+
+            if stale_ids:
+                conn.executemany(
+                    """
+                    DELETE FROM media_items
+                    WHERE account_id = ? AND chat_id = ? AND message_id = ?
+                    """,
+                    [(account_id, chat_id, message_id) for message_id in stale_ids],
+                )
+                conn.commit()
+
+            return valid_ids
 
     def record_download(self, record: DownloadRecord) -> bool:
         """Record one media item.
