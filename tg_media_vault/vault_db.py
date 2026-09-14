@@ -179,7 +179,9 @@ class VaultDatabase:
                 account_id=str(row["account_id"]),
                 chat_id=str(row["chat_id"]),
                 message_id=int(row["message_id"]),
-                media_id=(str(row["media_id"]) if row["media_id"] is not None else None),
+                media_id=(
+                    str(row["media_id"]) if row["media_id"] is not None else None
+                ),
                 media_type=str(row["media_type"]),
                 file_name=str(row["file_name"]),
                 file_path=str(row["file_path"]),
