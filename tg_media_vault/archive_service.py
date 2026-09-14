@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from telethon.errors import FileReferenceExpiredError
 
 from .models import DownloadRecord, MediaCandidate
 from .vault_db import VaultDatabase
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,11 +43,49 @@ class ArchiveSummary:
 
 ProgressHook = Callable[[ArchiveProgress], object]
 
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
-def safe_path_component(value: str, fallback: str = "telegram") -> str:
-    """Return a Windows-safe folder/file component."""
+
+def safe_path_component(value: str, fallback: str = "telegram", max_length: int = 120) -> str:
+    """Return a Windows-safe, reasonably short folder/file component."""
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value)).strip(" .")
-    return cleaned or fallback
+    cleaned = cleaned or fallback
+
+    stem_name = cleaned.split(".", 1)[0].upper()
+    if stem_name in _WINDOWS_RESERVED_NAMES:
+        cleaned = "_{0}".format(cleaned)
+
+    if len(cleaned) <= max_length:
+        return cleaned
+
+    stem, extension = os.path.splitext(cleaned)
+    if extension and len(extension) < max_length // 2:
+        allowed_stem = max(1, max_length - len(extension))
+        return "{0}{1}".format(stem[:allowed_stem], extension)
+    return cleaned[:max_length]
 
 
 class ArchiveService:
@@ -76,7 +117,11 @@ class ArchiveService:
         return result
 
     def _target_path(self, chat_title: str, item: MediaCandidate) -> Path:
-        chat_folder = safe_path_component(chat_title, fallback=item.chat_id)
+        # Include the stable chat identity so two channels with the same display
+        # title can never collide in the local archive.
+        chat_folder = safe_path_component(
+            "{0} [{1}]".format(chat_title, item.chat_id), fallback=item.chat_id
+        )
         type_folder = safe_path_component(item.media_type, fallback="file")
         original_name = safe_path_component(
             os.path.basename(item.file_name), fallback="media_{0}".format(item.message_id)
@@ -87,6 +132,19 @@ class ArchiveService:
             / type_folder
             / "{0}_{1}".format(item.message_id, original_name)
         )
+
+    @staticmethod
+    def _partial_path(target: Path) -> Path:
+        return target.with_name("{0}.part".format(target.name))
+
+    @staticmethod
+    def _existing_file_is_complete(item: MediaCandidate, target: Path) -> bool:
+        if not target.exists() or not target.is_file():
+            return False
+        size = target.stat().st_size
+        if item.file_size > 0:
+            return size == item.file_size
+        return size > 0
 
     async def _emit(self, hook: Optional[ProgressHook], progress: ArchiveProgress) -> None:
         if hook is None:
@@ -109,6 +167,14 @@ class ArchiveService:
             )
         )
 
+    @staticmethod
+    def _remove_partial(path: Path) -> None:
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+        except OSError:
+            logger.warning("Unable to remove partial archive file %s", path)
+
     async def _archive_one(
         self,
         chat_id,
@@ -130,11 +196,13 @@ class ArchiveService:
                 return "skipped"
 
             target = self._target_path(chat_title, item)
+            partial = self._partial_path(target)
             target.parent.mkdir(parents=True, exist_ok=True)
 
-            # Recover cleanly when a previous run wrote the file but crashed
-            # before the SQLite transaction was committed.
-            if target.exists() and target.is_file():
+            # Recover cleanly when a previous run completed the final file but
+            # crashed before the SQLite transaction was committed. A size
+            # mismatch is treated as incomplete and will be downloaded again.
+            if self._existing_file_is_complete(item, target):
                 self._record_existing(item, target)
                 await self._emit(
                     hook,
@@ -150,6 +218,7 @@ class ArchiveService:
                 )
                 return "skipped"
 
+            self._remove_partial(partial)
             await self._emit(
                 hook,
                 ArchiveProgress(item, index, total_items, 0, item.file_size, "starting"),
@@ -157,6 +226,11 @@ class ArchiveService:
 
             for attempt in range(self.retry_count):
                 try:
+                    # Never stream directly into the final filename. If the
+                    # process is interrupted, only the .part file can be left
+                    # behind, so the next run cannot mistake it for a completed
+                    # archive item.
+                    self._remove_partial(partial)
                     message_result = await self.client.get_messages(
                         chat_id, ids=item.message_id
                     )
@@ -186,7 +260,7 @@ class ArchiveService:
 
                     downloaded = await self.client.download_media(
                         message,
-                        file=str(target),
+                        file=str(partial),
                         progress_callback=on_bytes,
                     )
                     if not downloaded:
@@ -196,9 +270,31 @@ class ArchiveService:
                             )
                         )
 
-                    final_path = Path(str(downloaded)).expanduser().resolve()
-                    if not final_path.exists() and target.exists():
-                        final_path = target
+                    downloaded_path = Path(str(downloaded)).expanduser().resolve()
+                    if downloaded_path.exists() and downloaded_path != partial.resolve():
+                        # Telethon may normalize the provided path. Move whatever
+                        # it returned into our controlled partial location first.
+                        os.replace(str(downloaded_path), str(partial))
+
+                    if not partial.exists():
+                        raise RuntimeError(
+                            "Telegram download did not create the expected file for message {0}".format(
+                                item.message_id
+                            )
+                        )
+
+                    if item.file_size > 0 and partial.stat().st_size != item.file_size:
+                        raise RuntimeError(
+                            "Downloaded size mismatch for message {0}: expected {1}, got {2}".format(
+                                item.message_id,
+                                item.file_size,
+                                partial.stat().st_size,
+                            )
+                        )
+
+                    os.replace(str(partial), str(target))
+                    final_path = target.resolve()
+                    actual_size = final_path.stat().st_size
 
                     self.database.record_download(
                         DownloadRecord(
@@ -209,17 +305,8 @@ class ArchiveService:
                             media_type=item.media_type,
                             file_name=final_path.name,
                             file_path=str(final_path),
-                            file_size=(
-                                final_path.stat().st_size
-                                if final_path.exists()
-                                else item.file_size
-                            ),
+                            file_size=actual_size,
                         )
-                    )
-                    actual_size = (
-                        final_path.stat().st_size
-                        if final_path.exists()
-                        else item.file_size
                     )
                     await self._emit(
                         hook,
@@ -234,14 +321,26 @@ class ArchiveService:
                         ),
                     )
                     return "downloaded"
-                except (TimeoutError, FileReferenceExpiredError):
-                    if attempt + 1 >= self.retry_count:
-                        break
-                    if self.retry_delay:
-                        await asyncio.sleep(self.retry_delay)
-                except Exception:
-                    break
+                except (TimeoutError, FileReferenceExpiredError) as exc:
+                    logger.warning(
+                        "Retryable Telegram download error for message %s: %s",
+                        item.message_id,
+                        exc,
+                    )
+                except Exception as exc:  # Keep queue alive when one item fails.
+                    logger.warning(
+                        "Archive attempt %s/%s failed for message %s: %s",
+                        attempt + 1,
+                        self.retry_count,
+                        item.message_id,
+                        exc,
+                    )
 
+                self._remove_partial(partial)
+                if attempt + 1 < self.retry_count and self.retry_delay:
+                    await asyncio.sleep(self.retry_delay)
+
+            self._remove_partial(partial)
             await self._emit(
                 hook,
                 ArchiveProgress(
