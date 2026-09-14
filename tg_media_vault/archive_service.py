@@ -69,7 +69,9 @@ _WINDOWS_RESERVED_NAMES = {
 }
 
 
-def safe_path_component(value: str, fallback: str = "telegram", max_length: int = 120) -> str:
+def safe_path_component(
+    value: str, fallback: str = "telegram", max_length: int = 120
+) -> str:
     """Return a Windows-safe, reasonably short folder/file component."""
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value)).strip(" .")
     cleaned = cleaned or fallback
@@ -125,14 +127,13 @@ class ArchiveService:
         return value
 
     def _target_path(self, chat_title: str, item: MediaCandidate) -> Path:
-        # Include the stable chat identity so two channels with the same display
-        # title can never collide in the local archive.
         chat_folder = safe_path_component(
             "{0} [{1}]".format(chat_title, item.chat_id), fallback=item.chat_id
         )
         type_folder = safe_path_component(item.media_type, fallback="file")
         original_name = safe_path_component(
-            os.path.basename(item.file_name), fallback="media_{0}".format(item.message_id)
+            os.path.basename(item.file_name),
+            fallback="media_{0}".format(item.message_id),
         )
         return (
             self.root_directory
@@ -154,7 +155,9 @@ class ArchiveService:
             return size == item.file_size
         return size > 0
 
-    async def _emit(self, hook: Optional[ProgressHook], progress: ArchiveProgress) -> None:
+    async def _emit(
+        self, hook: Optional[ProgressHook], progress: ArchiveProgress
+    ) -> None:
         if hook is None:
             return
         result = hook(progress)
@@ -199,7 +202,9 @@ class ArchiveService:
             ):
                 await self._emit(
                     hook,
-                    ArchiveProgress(item, index, total_items, 0, item.file_size, "skipped"),
+                    ArchiveProgress(
+                        item, index, total_items, 0, item.file_size, "skipped"
+                    ),
                 )
                 return "skipped"
 
@@ -207,9 +212,6 @@ class ArchiveService:
             partial = self._partial_path(target)
             target.parent.mkdir(parents=True, exist_ok=True)
 
-            # Recover cleanly when a previous run completed the final file but
-            # crashed before the SQLite transaction was committed. A size
-            # mismatch is treated as incomplete and will be downloaded again.
             if self._existing_file_is_complete(item, target):
                 self._record_existing(item, target)
                 await self._emit(
@@ -229,16 +231,14 @@ class ArchiveService:
             self._remove_partial(partial)
             await self._emit(
                 hook,
-                ArchiveProgress(item, index, total_items, 0, item.file_size, "starting"),
+                ArchiveProgress(
+                    item, index, total_items, 0, item.file_size, "starting"
+                ),
             )
 
             source_chat_id = self._source_chat_id(item, chat_id)
             for attempt in range(self.retry_count):
                 try:
-                    # Never stream directly into the final filename. If the
-                    # process is interrupted, only the .part file can be left
-                    # behind, so the next run cannot mistake it for a completed
-                    # archive item.
                     self._remove_partial(partial)
                     message_result = await self.client.get_messages(
                         source_chat_id, ids=item.message_id
@@ -281,8 +281,6 @@ class ArchiveService:
 
                     downloaded_path = Path(str(downloaded)).expanduser().resolve()
                     if downloaded_path.exists() and downloaded_path != partial.resolve():
-                        # Telethon may normalize the provided path. Move whatever
-                        # it returned into our controlled partial location first.
                         os.replace(str(downloaded_path), str(partial))
 
                     if not partial.exists():
@@ -336,7 +334,7 @@ class ArchiveService:
                         item.message_id,
                         exc,
                     )
-                except Exception as exc:  # Keep queue alive when one item fails.
+                except Exception as exc:
                     logger.warning(
                         "Archive attempt %s/%s failed for message %s: %s",
                         attempt + 1,
@@ -365,26 +363,33 @@ class ArchiveService:
         items: Iterable[MediaCandidate],
         progress_hook: Optional[ProgressHook] = None,
     ) -> ArchiveSummary:
-        """Archive media concurrently and return aggregate counts."""
+        """Archive media in bounded concurrent batches and return counts."""
         item_list: List[MediaCandidate] = list(items)
         if not item_list:
             return ArchiveSummary(0, 0, 0, 0)
 
         semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
-        results = await asyncio.gather(
-            *[
-                self._archive_one(
-                    chat_id,
-                    chat_title,
-                    item,
-                    index,
-                    len(item_list),
-                    progress_hook,
-                    semaphore,
-                )
-                for index, item in enumerate(item_list, start=1)
-            ]
-        )
+        batch_size = max(32, self.max_concurrent_downloads * 8)
+        results: List[str] = []
+
+        for start in range(0, len(item_list), batch_size):
+            batch = item_list[start : start + batch_size]
+            batch_results = await asyncio.gather(
+                *[
+                    self._archive_one(
+                        chat_id,
+                        chat_title,
+                        item,
+                        index,
+                        len(item_list),
+                        progress_hook,
+                        semaphore,
+                    )
+                    for index, item in enumerate(batch, start=start + 1)
+                ]
+            )
+            results.extend(batch_results)
+
         return ArchiveSummary(
             requested=len(item_list),
             downloaded=results.count("downloaded"),
