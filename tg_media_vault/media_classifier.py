@@ -27,6 +27,15 @@ def _is_animated_document(document) -> bool:
     return False
 
 
+def _has_video_attribute(document) -> bool:
+    for attr in getattr(document, "attributes", []) or []:
+        if attr.__class__.__name__ == "DocumentAttributeVideo":
+            return True
+        if bool(getattr(attr, "round_message", False)):
+            return True
+    return False
+
+
 def classify_message(message) -> Optional[Tuple[str, object]]:
     """Return ``(vault_type, media_object)`` for a Telegram message.
 
@@ -45,14 +54,8 @@ def classify_message(message) -> Optional[Tuple[str, object]]:
         return "gif", document
 
     mime_type = (getattr(document, "mime_type", "") or "").lower()
-    if mime_type.startswith("video/"):
+    if mime_type.startswith("video/") or _has_video_attribute(document):
         return "video", document
-
-    # Telegram sometimes labels round/video-note media through attributes even
-    # when MIME metadata is generic. Treat those as video in the simple UI.
-    for attr in getattr(document, "attributes", []) or []:
-        if bool(getattr(attr, "round_message", False)):
-            return "video", document
 
     return "file", document
 
