@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from tg_media_vault.models import DownloadRecord
 from tg_media_vault.scanner import scan_chat
 from tg_media_vault.vault_db import VaultDatabase
 
@@ -73,3 +74,45 @@ def test_scan_filters_types_dates_and_preserves_source_dialog_id(tmp_path):
     assert len(result.items) == 2
     assert {item.message_id for item in result.items} == {2, 3}
     assert {item.chat_id for item in result.items} == {str(source_dialog_id)}
+
+
+def test_scan_bulk_skips_valid_archived_message(tmp_path):
+    now = datetime.now(timezone.utc)
+    message = SimpleNamespace(
+        id=9,
+        date=now,
+        photo=SimpleNamespace(id=1009),
+        document=None,
+    )
+    client = FakeScanClient([message])
+    database = VaultDatabase(tmp_path / "vault.sqlite3")
+    archived_file = tmp_path / "archived.jpg"
+    archived_file.write_bytes(b"archive")
+    source_dialog_id = "-100777"
+
+    database.record_download(
+        DownloadRecord(
+            account_id="account-1",
+            chat_id=source_dialog_id,
+            message_id=9,
+            media_id="1009",
+            media_type="photo",
+            file_name="archived.jpg",
+            file_path=str(archived_file),
+            file_size=archived_file.stat().st_size,
+        )
+    )
+
+    result = asyncio.run(
+        scan_chat(
+            client=client,
+            account_id="account-1",
+            chat_id=int(source_dialog_id),
+            database=database,
+            media_types=["photo"],
+        )
+    )
+
+    assert result.items == []
+    assert result.already_archived == 1
+    assert result.counts["photo"] == 0
