@@ -62,19 +62,19 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0,-1,4f); leftLp.setMargins(0,0,26,0); root.addView(left,leftLp);
 
         TextView title = text("LUCIS TV",32); title.setTypeface(null,1); left.addView(title);
-        TextView subtitle = text("小米电视 EA55 · v0.4 · 粤语优先",15); subtitle.setTextColor(Color.LTGRAY); left.addView(subtitle);
-        status = text("打开即可看公开直播；也可加入你自己的影视库。",14); status.setTextColor(Color.rgb(180,180,188)); left.addView(status);
+        TextView subtitle = text("小米电视 EA55 · v0.5 · 粤语优先",15); subtitle.setTextColor(Color.LTGRAY); left.addView(subtitle);
+        status = text("打开即可看公开直播；港片经典可直接连接 U 盘 / 硬盘影视库。",14); status.setTextColor(Color.rgb(180,180,188)); left.addView(status);
 
         Button publicLive = button("▶ 公共直播");
+        Button classics = button("🎞 港片经典");
         Button all = button("全部频道");
         Button fav = button("★ 我的收藏");
         Button history = button("最近观看");
-        Button classics = button("🎞 港片经典");
         Button importM3u = button("导入 M3U 播放列表");
         Button openVideo = button("直接播放视频链接");
-        left.addView(publicLive); left.addView(all); left.addView(fav); left.addView(history); left.addView(classics); left.addView(importM3u); left.addView(openVideo);
+        left.addView(publicLive); left.addView(classics); left.addView(all); left.addView(fav); left.addView(history); left.addView(importM3u); left.addView(openVideo);
 
-        TextView note = text("内置频道只使用公开直播入口。经典港片需连接你拥有或获授权的 Jellyfin/NAS/本地影视库；不会内置盗版片源或绕过 DRM。",13);
+        TextView note = text("港片经典支持你自己的 U 盘、移动硬盘或本地授权影片，自动扫描 MKV/MP4 等视频并生成电视海报墙。不会内置盗版片源或绕过 DRM。",13);
         note.setTextColor(Color.rgb(130,134,145)); left.addView(note);
 
         LinearLayout right = new LinearLayout(this); right.setOrientation(LinearLayout.VERTICAL); root.addView(right,new LinearLayout.LayoutParams(0,-1,6f));
@@ -86,11 +86,11 @@ public class MainActivity extends Activity {
         ScrollView sc = new ScrollView(this); list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); sc.addView(list); right.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
 
         publicLive.setOnClickListener(v -> { mode="public"; render(); });
+        classics.setOnClickListener(v -> startActivity(new Intent(this, LibraryActivity.class)));
         all.setOnClickListener(v -> { mode="all"; render(); });
         fav.setOnClickListener(v -> { mode="fav"; render(); });
         history.setOnClickListener(v -> { mode="history"; render(); });
         doSearch.setOnClickListener(v -> render());
-        classics.setOnClickListener(v -> showClassicsInfo());
         importM3u.setOnClickListener(v -> askPlaylist());
         openVideo.setOnClickListener(v -> askVideo());
 
@@ -99,13 +99,6 @@ public class MainActivity extends Activity {
 
         String saved = getSharedPreferences("lucis", MODE_PRIVATE).getString("m3u","");
         if(!saved.isEmpty()) loadPlaylist(saved);
-    }
-
-    private void showClassicsInfo() {
-        new AlertDialog.Builder(this)
-            .setTitle("港片经典 · 粤语优先")
-            .setMessage("下一阶段可接 Jellyfin / NAS / 本地硬盘，自动生成港片海报墙。播放器已设置为优先选择粤语音轨与繁体中文字幕。\n\n受版权保护的经典港片不会从未经授权的网站内置进 APK。")
-            .setPositiveButton("知道了",null).show();
     }
 
     private void askPlaylist() {
@@ -129,7 +122,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             ArrayList<Channel> loaded=new ArrayList<>();
             try {
-                HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection(); c.setConnectTimeout(8000); c.setReadTimeout(12000); c.setRequestProperty("User-Agent","LucisTV/0.4");
+                HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection(); c.setConnectTimeout(8000); c.setReadTimeout(12000); c.setRequestProperty("User-Agent","LucisTV/0.5");
                 int code=c.getResponseCode(); if(code<200||code>=300) throw new IOException("HTTP "+code);
                 BufferedReader r=new BufferedReader(new InputStreamReader(c.getInputStream())); String line,name="频道",group="未分类";
                 while((line=r.readLine())!=null){ line=line.trim(); if(line.startsWith("#EXTINF")){ int p=line.lastIndexOf(','); if(p>=0&&p+1<line.length())name=line.substring(p+1).trim(); String g=attr(line,"group-title"); if(!g.isEmpty())group=g; }
