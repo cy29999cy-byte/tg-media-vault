@@ -4,6 +4,9 @@ on:
     branches: [ lucis-tv-build ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,7 +19,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Build debug APK
+      - name: Build APK
         working-directory: lucis-tv
         run: gradle --no-daemon assembleDebug
       - name: Verify APK
@@ -25,10 +28,18 @@ jobs:
           test -f app/build/outputs/apk/debug/app-debug.apk
           unzip -t app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk
-      - name: Rename APK
-        run: cp lucis-tv/app/build/outputs/apk/debug/app-debug.apk Lucis-TV-EA55-v0.6.0.apk
+      - name: Prepare APK
+        run: cp lucis-tv/app/build/outputs/apk/debug/app-debug.apk Lucis-TV-EA55.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Lucis-TV-EA55-v0.6.0
-          path: Lucis-TV-EA55-v0.6.0.apk
+          name: Lucis-TV-EA55-v1.0.0
+          path: Lucis-TV-EA55.apk
           if-no-files-found: error
+      - name: Publish rolling TV update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete lucis-tv-latest --cleanup-tag -y || true
+          git tag -f lucis-tv-latest
+          git push origin -f refs/tags/lucis-tv-latest
+          gh release create lucis-tv-latest Lucis-TV-EA55.apk --title "Lucis TV 1.0.0" --notes "小米 EA55 成品版。后续版本可在电视内通过‘检查更新’直接下载安装，不再需要 U 盘。"
