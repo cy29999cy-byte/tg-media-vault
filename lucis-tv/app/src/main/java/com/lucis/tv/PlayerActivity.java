@@ -9,6 +9,7 @@ import android.widget.Toast;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
@@ -36,6 +37,13 @@ public class PlayerActivity extends Activity {
 
         player = new ExoPlayer.Builder(this).build();
         playerView.setPlayer(player);
+
+        TrackSelectionParameters params = player.getTrackSelectionParameters().buildUpon()
+                .setPreferredAudioLanguages("yue", "zh-HK", "zh")
+                .setPreferredTextLanguages("zh-Hant", "zh-HK", "zh")
+                .build();
+        player.setTrackSelectionParameters(params);
+
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException error) {
                 Toast.makeText(PlayerActivity.this, "播放失败：" + error.getErrorCodeName(), Toast.LENGTH_LONG).show();
