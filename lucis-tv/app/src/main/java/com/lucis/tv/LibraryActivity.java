@@ -25,7 +25,7 @@ public class LibraryActivity extends Activity {
     private void buildUi(){
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(9,10,13)); root.setPadding(34,24,34,24);
         TextView title=text("港片经典 · 本地影视库",30); title.setTypeface(null,1); root.addView(title);
-        status=text("选择装有电影的 U 盘 / 硬盘 / 本地文件夹。Lucis TV 会建立海报墙式列表，播放时优先粤语与繁体中文字幕。",14); status.setTextColor(Color.LTGRAY); root.addView(status);
+        status=text("选择装有电影的 U 盘 / 硬盘 / 本地文件夹。Lucis TV 会建立海报墙式列表，并记住每部影片的观看进度。",14); status.setTextColor(Color.LTGRAY); root.addView(status);
         LinearLayout actions=new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL); Button choose=button("选择电影文件夹"); Button refresh=button("刷新影视库"); actions.addView(choose); actions.addView(refresh); root.addView(actions);
         ScrollView sc=new ScrollView(this); grid=new GridLayout(this); grid.setColumnCount(4); grid.setPadding(0,18,0,18); sc.addView(grid); root.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         choose.setOnClickListener(v->chooseTree()); refresh.setOnClickListener(v->loadSavedTree()); setContentView(root);
@@ -55,11 +55,22 @@ public class LibraryActivity extends Activity {
     private boolean isVideo(DocumentFile f){ String m=f.getType(); if(m!=null&&m.startsWith("video/"))return true; String n=f.getName(); if(n==null)return false; n=n.toLowerCase(Locale.ROOT); return n.endsWith(".mkv")||n.endsWith(".mp4")||n.endsWith(".m4v")||n.endsWith(".avi")||n.endsWith(".mov")||n.endsWith(".ts")||n.endsWith(".webm"); }
     private String cleanTitle(String n){ int p=n.lastIndexOf('.'); if(p>0)n=n.substring(0,p); return n.replace('.',' ').replace('_',' ').trim(); }
 
-    private void render(ArrayList<Movie> movies){ grid.removeAllViews(); status.setText("影视库 · "+movies.size()+" 部影片 · 默认粤语优先"); if(movies.isEmpty()){ showEmpty("这个文件夹里没有找到常见视频文件。\n\n支持 MKV / MP4 / M4V / AVI / MOV / TS / WEBM。"); return; }
-        for(Movie m:movies){ Button card=button("🎬\n\n"+m.title+"\n\n粤语优先"); card.setGravity(Gravity.CENTER); card.setMinHeight(250); card.setOnClickListener(v->play(m)); GridLayout.LayoutParams lp=new GridLayout.LayoutParams(); lp.width=0; lp.height=GridLayout.LayoutParams.WRAP_CONTENT; lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f); lp.setMargins(8,8,8,8); grid.addView(card,lp); }
+    private String progressLabel(Uri uri){
+        String key="progress_"+Integer.toHexString(uri.toString().hashCode());
+        long pos=getSharedPreferences("lucis",MODE_PRIVATE).getLong(key,0L);
+        long dur=getSharedPreferences("lucis",MODE_PRIVATE).getLong(key+"_duration",0L);
+        if(pos<15_000||dur<=0)return "";
+        int pct=(int)Math.max(1,Math.min(99,(pos*100L)/dur));
+        return "\n继续观看 · "+pct+"%";
+    }
+
+    private void render(ArrayList<Movie> movies){ grid.removeAllViews(); status.setText("影视库 · "+movies.size()+" 部影片 · 粤语优先 · 自动续播"); if(movies.isEmpty()){ showEmpty("这个文件夹里没有找到常见视频文件。\n\n支持 MKV / MP4 / M4V / AVI / MOV / TS / WEBM。"); return; }
+        for(Movie m:movies){ Button card=button("🎬\n\n"+m.title+"\n\n粤语优先"+progressLabel(m.uri)); card.setGravity(Gravity.CENTER); card.setMinHeight(250); card.setOnClickListener(v->play(m)); GridLayout.LayoutParams lp=new GridLayout.LayoutParams(); lp.width=0; lp.height=GridLayout.LayoutParams.WRAP_CONTENT; lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f); lp.setMargins(8,8,8,8); grid.addView(card,lp); }
         if(grid.getChildCount()>0)grid.getChildAt(0).requestFocus();
     }
 
     private void showEmpty(String msg){ grid.removeAllViews(); TextView t=text(msg,17); t.setTextColor(Color.GRAY); grid.addView(t); }
     private void play(Movie m){ Intent i=new Intent(this,PlayerActivity.class); i.putExtra("url",m.uri.toString()); i.putExtra("name",m.title); startActivity(i); }
+
+    @Override protected void onResume(){ super.onResume(); if(grid!=null && grid.getChildCount()>0) loadSavedTree(); }
 }
