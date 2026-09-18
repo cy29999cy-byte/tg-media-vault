@@ -1,0 +1,53 @@
+{
+  "updated": "2026-09-18",
+  "entries": [
+    {
+      "id": "huya-together",
+      "title": "虎牙 · 一起看影视直播",
+      "platform": "虎牙",
+      "category": "港片直播",
+      "url": "https://www.huya.com/g/2135",
+      "note": "虎牙官方“一起看”影视频道。当前页面可见经典港片、星爷、英叔、成龙、刘德华/梁朝伟等影视直播房，内容由平台实时变化。"
+    },
+    {
+      "id": "douyu-movie",
+      "title": "斗鱼 · 一起看电影",
+      "platform": "斗鱼",
+      "category": "港片直播",
+      "url": "https://www.douyu.com/playlist/info/Qld2mlnKN",
+      "note": "斗鱼官方播单入口，聚合正在直播的电影/电视剧房间。"
+    },
+    {
+      "id": "douyu-playlists",
+      "title": "斗鱼 · 粤语电影 / 经典影片播单",
+      "platform": "斗鱼",
+      "category": "粤语电影",
+      "url": "https://www.douyu.com/playlist/all",
+      "note": "斗鱼官方播单总览。当前可见“粤语电影”“林正英、周星驰影片”“一起看电影”“经典影片”等播单。"
+    },
+    {
+      "id": "douyu-hd",
+      "title": "斗鱼 · 超清电影",
+      "platform": "斗鱼",
+      "category": "电影直播",
+      "url": "https://www.douyu.com/playlist/info/Aq8M1Xo9z",
+      "note": "斗鱼官方超清电影播单，包含港剧/电影等正在直播的房间。"
+    },
+    {
+      "id": "huya-together-alt",
+      "title": "虎牙 · 影视频道总览",
+      "platform": "虎牙",
+      "category": "直播平台",
+      "url": "https://www.huya.com/g/seeTogether",
+      "note": "虎牙官方“一起看”总入口，用于发现平台当前在线影视直播。"
+    },
+    {
+      "id": "douyu-home",
+      "title": "斗鱼 · 直播首页",
+      "platform": "斗鱼",
+      "category": "直播平台",
+      "url": "https://www.douyu.com/",
+      "note": "斗鱼官方直播首页，可继续进入“一起看”等频道。"
+    }
+  ]
+}
