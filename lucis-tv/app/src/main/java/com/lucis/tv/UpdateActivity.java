@@ -18,8 +18,8 @@ public class UpdateActivity extends Activity {
     private int remoteCode=0;
     private long downloadId=-1L;
     private BroadcastReceiver receiver;
-    private static final int CURRENT_CODE=200;
-    private static final String CURRENT_VERSION="2.0.0";
+    private static final int CURRENT_CODE=210;
+    private static final String CURRENT_VERSION="2.1.0";
     private static final String META="https://raw.githubusercontent.com/cy29999cy-byte/tg-media-vault/lucis-tv-build/lucis-tv/update.json";
 
     @Override public void onCreate(Bundle b){
