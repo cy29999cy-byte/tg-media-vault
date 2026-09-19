@@ -1,6 +1,6 @@
 {
-  "versionCode": 200,
-  "versionName": "2.0.0",
+  "versionCode": 210,
+  "versionName": "2.1.0",
   "apkUrl": "https://github.com/cy29999cy-byte/tg-media-vault/releases/download/lucis-tv-latest/Lucis-TV-EA55.apk",
-  "notes": "直播平台成品版：新增虎牙/斗鱼官方影视直播中心、经典港片/粤语入口、云端直播目录自动刷新，并保留本地港片库、粤语优先、自动续播、收藏、历史、M3U 与香港公开直播。"
+  "notes": "EA55 实机修复版：虎牙/斗鱼优先启动电视客户端，网页仅作备用；重做安全区布局，避免边缘裁切；保留经典港片直播入口、本地港片库、粤语优先、自动续播、收藏、历史、M3U 与香港公开直播。"
 }
