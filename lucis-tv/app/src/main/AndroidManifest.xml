@@ -10,6 +10,7 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
 
+        <activity android:name=".PlatformBridgeActivity" android:screenOrientation="landscape" android:exported="false"/>
         <activity android:name=".WebViewActivity" android:screenOrientation="landscape" android:exported="false"/>
         <activity android:name=".PortalActivity" android:screenOrientation="landscape" android:exported="false"/>
         <activity android:name=".UpdateActivity" android:screenOrientation="landscape" android:exported="false"/>
